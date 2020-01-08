@@ -3,7 +3,7 @@ Create a spreadsheet containing static vs DHCP information for Meraki devices.
 
 Spreadsheet includes index of organizations with hyperlinks to individual org pages.
 
-If MX is acting as the DHCP server for network devices, report shows if a
+If MX is acting as the DHCP server for network devices' subnet, report shows if a
 reservation exists.
 """
 
@@ -19,6 +19,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.styles import Font, Alignment
 from string import ascii_uppercase
 from netaddr import IPNetwork, IPAddress
+from getpass import getpass
 
 # Used for time.sleep(API_EXEC_DELAY). Delay added to avoid hitting
 # dashboard API max request rate
@@ -106,10 +107,10 @@ def printhelp():
     printusertext('by users mpapazog & shiyuechengineer, retrieved 10/19/2018')
     printusertext('')
     printusertext('To run the script, enter:')
-    printusertext('python getStaticVsDHCP.py -k <api key> -o <org> -f <file>')
+    printusertext('python getStaticVsDHCP.py -o <org> -f <file>')
     printusertext('')
     printusertext('-o can be a partial name in quotes with a single wildcard,')
-    printusertext('such as \'Calla*\'.')
+    printusertext('such as \'Calla*\' or \'*ssouri\'.')
     printusertext('Use /all for all organizations you have access to.')
     printusertext('')
     printusertext('-f is the file the results will print to.')
@@ -180,7 +181,7 @@ def getorglist(p_apikey):
     try:
         r = requests.get('https://api.meraki.com/api/v0/organizations', headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'}, timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
     except:
-        printusertext('ERROR 01: Unable to contact Meraki cloud')
+        printusertext('ERROR 01: Unable to authenticate to Meraki cloud.')
         sys.exit(2)
 
     returnvalue = []
@@ -375,36 +376,36 @@ def filterOrgList(p_apikey, p_filter, p_orglist):
 def main(argv):
     """Create report showing DHCP vs Static IP status on MX, MR, MS."""
     # Initialize variables for command line arguments
-    arg_apikey = ''
     arg_orgname = ''
     arg_filename = ''
 
     # Get command line arguments
     try:
-        opts, args = getopt.getopt(argv, 'hk:o:f:')
+        opts, args = getopt.getopt(argv, 'ho:f:')
     except getopt.GetoptError:
         printusertext('Error getting opts.')
         sys.exit(2)
 
-    for opt, arg in opts:
-        if opt == '-h':
-            printhelp()
-            sys.exit()
-        elif opt == '-k':
-            arg_apikey = arg
-            if arg_apikey == '':
-                printusertext('No API key')
+    if opts:
+        for opt, arg in opts:
+            if opt == '-h':
+                printhelp()
                 sys.exit()
-        elif opt == '-o':
-            arg_orgname = arg
-            if arg_orgname == '':
-                printusertext('No org name')
-                sys.exit()
-        elif opt == '-f':
-            arg_filename = arg
-            if arg_filename == '':
-                printusertext('No file name')
-                sys.exit()
+            elif opt == '-o':
+                arg_orgname = arg
+                if arg_orgname == '':
+                    printusertext('No org name')
+                    sys.exit()
+            elif opt == '-f':
+                arg_filename = arg
+                if arg_filename == '':
+                    printusertext('No file name')
+                    sys.exit()
+    else:
+        print("No opts given.")
+        sys.exit()
+
+    arg_apikey = getpass("API key: ")
 
     # Get list of all orgs this admin has access to.
     raworglist = getorglist(arg_apikey)

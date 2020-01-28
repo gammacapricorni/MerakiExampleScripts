@@ -107,7 +107,7 @@ def printhelp():
     printusertext('by users mpapazog & shiyuechengineer, retrieved 10/19/2018')
     printusertext('')
     printusertext('To run the script, enter:')
-    printusertext('python getStaticVsDHCP.py -o <org> -f <file>')
+    printusertext('python checkDeviceIPAssignment.py -o <org> -f <file>')
     printusertext('')
     printusertext('-o can be a partial name in quotes with a single wildcard,')
     printusertext('such as \'Calla*\' or \'*ssouri\'.')

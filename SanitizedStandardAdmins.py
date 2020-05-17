@@ -1,299 +1,338 @@
-import sys, getopt, requests, json, time, pprint
+import sys
+import getopt
+import requests
+import json
+import time
 from dataclasses import dataclass
 from datetime import datetime
-from re import compile
+from getpass import getpass
 
-#Used for time.sleep(API_EXEC_DELAY). Delay added to avoid hitting dashboard API max request rate
+# Used for time.sleep(API_EXEC_DELAY). Delay added to avoid hitting dashboard API max request rate
 API_EXEC_DELAY = 0.21
 
-#connect and read timeouts for the Requests module
+# Connect and read timeouts for the Requests module
 REQUESTS_CONNECT_TIMEOUT = 30
-REQUESTS_READ_TIMEOUT    = 30
+REQUESTS_READ_TIMEOUT = 30
 
-#used by merakirequestthrottler(). DO NOT MODIFY
+# Used by merakirequestthrottler(). DO NOT MODIFY
 LAST_MERAKI_REQUEST = datetime.now()
 
 LINE_SEPARATOR = '-' * 20
 
+
 @dataclass
-class c_orgdata:
+class c_orgData:
     id: str
     name: str
     menu: int
-    shard: str
 
-def printusertext(p_message):
-    #prints a line of text that is meant for the user to read
-    #do not process these lines when chaining scripts
+
+def print_user_text(p_message):
+    """
+    Prints a line of text meant for the user to read.
+    :param p_message: Line of text
+    :return: None
+    """
+
     print('@ %s' % p_message)
+    return None
 
-def printhelp():
-    #prints help text
-    printusertext('')
-    printusertext('Use to update pre-existing Meraki Org with the standard set of admins')
-    printusertext('')
-    printusertext('merakirequestthrottler(), getorglist(), filterorglist(), method of getting')
-    printusertext('opts, general approach to Meraki API/requests model use are based off')
-    printusertext('manageadmins.py at')
-    printusertext('https://github.com/meraki/automation-scripts/blob/master/manageadmins.py')
-    printusertext('by users mpapazog and shiyuechengineer, retrieved 10/19/2018 by Nash King')
-    printusertext('')
-    printusertext('To run the script, enter:')
-    printusertext('python standardAdmins.py -k <api key> -o <org>')
-    printusertext('')
-    printusertext('-o can be a partial name in quotes with a single wildcard, such as "Calla*"')
-    printusertext('')
-    printusertext('Use double quotes (\"\") in Windows to pass arguments containing spaces. Names are case-sensitive.')
-    printusertext('')
+
+def print_help():
+    """
+    Prints help text for user.
+    :return: None
+    """
+    print_user_text('')
+    print_user_text('Use to update pre-existing Meraki Org with the standard set of admins')
+    print_user_text('')
+    print_user_text('merakirequestthrottler(), get_org_list(), filterorglist(), method of getting')
+    print_user_text('opts, general approach to Meraki API/requests model use are based off')
+    print_user_text('manageadmins.py at')
+    print_user_text('https://github.com/meraki/automation-scripts/blob/master/manageadmins.py')
+    print_user_text('by users mpapazog and shiyuechengineer, retrieved 10/19/2018 by Nash King')
+    print_user_text('')
+    print_user_text('To run the script, enter:')
+    print_user_text('python standardAdmins.py -o <org>')
+    print_user_text('')
+    print_user_text('-o can be a partial name in quotes with a single wildcard, such as "Calla*"')
+    print_user_text('')
+    print_user_text('Use double quotes (\"\") in Windows to pass arguments containing spaces. Names are case-sensitive.')
+    print_user_text('')
+
 
 def merakirequestthrottler(p_requestcount=1):
-    #makes sure there is enough time between API requests to Dashboard to avoid hitting shaper
+    """
+    Ensures there is enough time between API requests to Dashboard, to avoid hitting shaper.
+    :param p_requestcount:
+    :return: None
+    """
     global LAST_MERAKI_REQUEST
 
-    if (datetime.now()-LAST_MERAKI_REQUEST).total_seconds() < (API_EXEC_DELAY*p_requestcount):
-        time.sleep(API_EXEC_DELAY*p_requestcount)
+    if (datetime.now() - LAST_MERAKI_REQUEST).total_seconds() < (API_EXEC_DELAY * p_requestcount):
+        time.sleep(API_EXEC_DELAY * p_requestcount)
 
     LAST_MERAKI_REQUEST = datetime.now()
-    return
+    return None
 
-# Get shard
-def getshardurl(p_apikey, p_orgid):
-	#Looks up shard URL for a specific org. Use this URL instead of 'dashboard.meraki.com'
-	# when making API calls with API accounts that can access multiple orgs.
-	#On failure returns 'null'
 
-	r = requests.get('https://dashboard.meraki.com/api/v0/organizations/%s/snmp' % p_orgid, headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'})
+def get_org_list(p_apikey):
+    """
+    Pulls list of all orgs the API key has access to.
+    :param p_apikey: Your API key
+    :return: list of dicts containing org info
+    """
 
-	if r.status_code != requests.codes.ok:
-		return 'null'
-
-	rjson = r.json()
-
-	return(rjson['hostname'])
-
-# Get org name etc for one organization
-def getorginfo(p_apikey, p_orgid, p_shardurl):
     merakirequestthrottler()
+
     try:
-        r = requests.get(f"https://{p_shardurl}/api/v0/organizations/{p_orgid}", headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
+        r = requests.get('https://api.meraki.com/api/v0/organizations',
+                         headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},
+                         timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
     except:
-        printusertext('ERROR 02: Unable to contact Meraki cloud')
+        print_user_text('ERROR 01: Unable to contact Meraki cloud')
         sys.exit(2)
+
+    if r.status_code != requests.codes.ok:
+        return [{'id': 'null'}]
 
     rjson = r.json()
 
-    return(rjson)
+    return (rjson)
 
-def getorglist(p_apikey):
-    #returns the organizations' list for a specified admin
+
+def get_admin_list(p_apikey, p_orgid):
+    """
+    Returns the list of organizations an the API key can access.
+
+    :param p_apikey:
+    :param p_orgid:
+    :return: list of dicts
+    """
 
     merakirequestthrottler()
     try:
-        r = requests.get('https://api.meraki.com/api/v0/organizations', headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'}, timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
-    except:
-        printusertext('ERROR 01: Unable to contact Meraki cloud')
-        sys.exit(2)
+        r = requests.get(f'https://api-mp.meraki.com/api/v0/organizations/{p_orgid}/admins',
+                         headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},
+                         timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
+    except requests.exceptions.RequestException as e:
+        print_user_text(f'Error: {e}')
+        print_user_text('Unable to get list of administrators from organization.')
+        sys.exit(1)
 
     returnvalue = []
     if r.status_code != requests.codes.ok:
-        returnvalue.append({'id':'null'})
+        returnvalue.append({'id': 'null'})
         return returnvalue
 
     rjson = r.json()
 
-    return(rjson)
+    return (rjson)
 
-def getAdminList(p_apikey, p_orgid, p_shardurl):
-    #returns the organizations' list for a specified admin
-
-    merakirequestthrottler()
-    try:
-        r = requests.get(f'https://{p_shardurl}/api/v0/organizations/{p_orgid}/admins', headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'}, timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
-    except:
-        printusertext('ERROR 01: Unable to contact Meraki cloud')
-        sys.exit(2)
-
-    returnvalue = []
-    if r.status_code != requests.codes.ok:
-        returnvalue.append({'id':'null'})
-        return returnvalue
-
-    rjson = r.json()
-
-    return(rjson)
 
 # Print menu of possible matching organizations
-def printOrgMenu(p_orglist):
-    print("Called printOrgMenu")
-    menuchoice = ''
-    quitOpt = compile("^[q|Q]")
-    numbers = compile("^[0-9]")
-    allOpt = compile("^[aA]")
+def print_org_menu(p_orglist):
+    """
+    Print menu of organizations.
+
+    :param p_orglist: list of c_orgdata objects
+    :return: single matching c_orgdata object
+    """
+
+    menu_choice = ''
 
     print('\nChoose organization from list, or Q to Quit')
-    # Loop til menuchoice is a valid response or a valid org is chosen
-    while menuchoice == '':
+
+    # Loop til menu_choice is a valid response or a valid org is chosen
+    while menu_choice == '':
         for org in p_orglist:
-            #Print each org
+            # Print each org
             print(f'{org.menu}: {org.name}')
         print('Q: Quit program')
-        print('Enter choice: ', end='')
-        menuchoice = input()
+        menu_choice = input('Enter choice: ')
         print('')
-        # Check if menuchoice is Q or q
-        if quitOpt.match(menuchoice):
+        if menu_choice.lower().strip() == 'q':
             sys.exit()
-        # Check if menuchoice is numbers
-        elif menuchoice is not '':
+
+        # Check if menu_choice is not empty
+        elif menu_choice != '' and menu_choice.isdigit():
             for org in p_orglist:
                 # If org.menu matches, then return org
-                if org.menu == int(menuchoice):
-                    return(org)
-            # If nothing matches, set menuchoice to keep looping
+                if org.menu == int(menu_choice):
+                    return org
+            # If nothing matches, set menu_choice to empty to keep looping
             print('Invalid choice. Please try again.')
-            menuchoice = ''
+            menu_choice = ''
         else:
             print('Invalid choice. Please try again.')
-            menuchoice = ''
+            menu_choice = ''
 
-def addorgadmin(p_apikey, p_orgid, p_shardurl, p_email, p_name, p_privilege):
-   #creates admin into an organization
 
+def add_org_admin(p_apikey, p_orgid, p_email, p_name, p_privilege):
+    """
+    Creates admin for a single organization
+    :param p_apikey: Your API key
+    :param p_orgid: org ID
+    :param p_email: administrator's email address - serves as user name
+    :param p_name: administrator's display name
+    :param p_privilege: privilege level. Full (read/write) or read-only
+    :return:
+    """
     merakirequestthrottler()
 
     try:
-        r = requests.post('https://%s/api/v0/organizations/%s/admins' % (p_shardurl, p_orgid), data=json.dumps({'name': p_name, 'email': p_email, 'orgAccess': p_privilege}), headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'}, timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
-    except:
-        printusertext('ERROR 03: Unable to contact Meraki cloud')
+        r = requests.post(f'https://api-mp.meraki.com/api/v0/organizations/{p_orgid}/admins',
+                          data=json.dumps({'name': p_name, 'email': p_email, 'orgAccess': p_privilege}),
+                          headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},
+                          timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
+    except requests.exceptions.RequestException as e:
+        print_user_text(f'Error msg: {e}')
+        print_user_text(f'Unable to add administrator {p_email} to org.')
         sys.exit(2)
 
     if r.status_code != requests.codes.ok:
         if r.status_code == 400:
-            printusertext('WARNING: Email already registered with a Cisco Meraki Dashboard account. For security purposes, that user must verify their email address before administrator permissions can be granted here.')
-        return ('fail')
-    else:
-        print(f"Added {admin.email}")
+            print_user_text(
+                f'WARNING: {p_email} may already be added to org. If not, have user login to dashboard.meraki.com'
+                'and verify their email address.')
 
-    return('ok')
+    return (r.status_code)
+
 
 def filterOrgList(p_apikey, p_filter, p_orglist):
-    #tried to match a list of org IDs to a filter expression
-    #   /all    all organizations
-    #   <name>  match if name matches. name can contain one wildcard at start, middle or end
+    """
+    :param p_apikey: Your API key.
+    :param p_filter: Specified filter string. /all matches all orgs.
+    :param p_orglist: Raw list of organizations from Get Organizations.
+    :return: return_list: sorted filtered list of c_orgdata objects
 
-    returnlist = []
+    Tries to match a list of org IDs to a filter expression, then convert JSON into c_orgdata objects.
+    """
 
-    flag_processall     = False
-    flag_gotwildcard    = False
+    global start_section
+    return_list = []
+
+    flag_process_all = False
+    flag_got_wildcard = False
     if p_filter == '/all':
-        flag_processall = False
+        flag_process_all = False
         print("No /all allowed on admin adds.")
     else:
-        wildcardpos = p_filter.find('*')
+        wildcard_pos = p_filter.find('*')
 
-        if wildcardpos > -1:
-            flag_gotwildcard = True
-            startsection    = ''
-            endsection      = ''
+        if wildcard_pos > -1:
+            flag_got_wildcard = True
+            start_section = ''
+            end_section = ''
 
-            if   wildcardpos == 0:
-                #wildcard at start of string, only got endsection
-                endsection   = p_filter[1:]
+            if wildcard_pos == 0:
+                # wildcard at start of string, only got end_section
+                end_section = p_filter[1:]
 
-            elif wildcardpos == len(p_filter) - 1:
-                #wildcard at start of string, only got startsection
-                startsection = p_filter[:-1]
+            elif wildcard_pos == len(p_filter) - 1:
+                # wildcard at start of string, only got start_section
+                start_section = p_filter[:-1]
             else:
-                #wildcard at middle of string, got both startsection and endsection
-                wildcardsplit = p_filter.split('*')
-                startsection  = wildcardsplit[0]
-                endsection    = wildcardsplit[1]
+                # wildcard at middle of string, got both start_section and end_section
+                wild_card_split = p_filter.split('*')
+                start_section = wild_card_split[0]
+                end_section = wild_card_split[1]
 
     for org in p_orglist:
-        if flag_processall:
-            returnlist.append(c_orgdata(org['id'], org['name'], '', getshardurl(p_apikey, org['id'])))
-        elif flag_gotwildcard:
-            flag_gotmatch = True
-            #match startsection and endsection
-            startlen = len(startsection)
-            endlen   = len(endsection)
+        if flag_process_all:
+            return_list.append(c_orgData(org['id'], org['name'], 0))
+        elif flag_got_wildcard:
+            flag_got_match = True
+            # match start_section and end_section
+            start_len = len(start_section)
+            end_len = len(end_section)
 
-            if startlen > 0:
-                if org['name'][:startlen] != startsection:
-                    flag_gotmatch = False
-            if endlen   > 0:
-                if org['name'][-endlen:]   != endsection:
-                    flag_gotmatch = False
+            if start_len > 0:
+                if org['name'][:start_len] != start_section:
+                    flag_got_match = False
+            elif end_len > 0:
+                if org['name'][-end_len:] != end_section:
+                    flag_got_match = False
 
-            if flag_gotmatch:
-                returnlist.append(c_orgdata(org['id'], org['name'], '', getshardurl(p_apikey, org['id'])))
+            if flag_got_match:
+                return_list.append(c_orgData(org['id'], org['name'], 0))
 
         else:
-            #match full name
+            # match full name
             if org['name'] == p_filter:
-                returnlist.append(c_orgdata(org['id'], org['name'], '', getshardurl(p_apikey, org['id'])))
-    sortorgs = []
-    sortorgs = sorted(returnlist, key=lambda c_orgdata: c_orgdata.name)
-    menunum = 1
-    for org in sortorgs:
-        org.menu = menunum
-        menunum += 1
-    return(sortorgs)
+                return_list.append(c_orgData(org['id'], org['name'], 0))
+
+    # Sort list here, so the right menu num gets added
+    sorted_orgs = []
+    sorted_orgs = sorted(return_list, key=lambda c_orgdata: c_orgdata.name)
+    menu_num = 1
+    for org in sorted_orgs:
+        org.menu = menu_num
+        menu_num += 1
+    return (sorted_orgs)
+
 
 def main(argv):
-    #initialize variables for command line arguments
-    arg_apikey  = ''
+    # initialize variables for command line arguments
+    arg_apikey = getpass('API key: ')
     arg_orgname = ''
 
-    #get command line arguments
+    if arg_apikey == '':
+        arg_apikey = getpass('Enter API key: ')
+
+    # get command line arguments
     try:
-        opts, args = getopt.getopt(argv, 'hk:o:')
+        opts, args = getopt.getopt(argv, 'ho:')
     except getopt.GetoptError:
-        printusertext('Error getting opts.')
+        print_user_text('Error getting opts.')
         sys.exit(2)
 
     for opt, arg in opts:
-        if   opt == '-h':
-            printhelp()
+        if opt == '-h':
+            print_help()
             sys.exit()
-        elif opt == '-k':
-            arg_apikey  = arg
-            if arg_apikey == '':
-                printusertext('No API key')
-                sys.exit()
         elif opt == '-o':
             arg_orgname = arg
             if arg_orgname == '':
-                printusertext('No org name')
-                sys.exit()
+                print_user_text('No org name')
+                sys.exit(2)
 
-    #get list org all orgs belonging to this admin
-    raworglist = getorglist(arg_apikey)
-    if raworglist[0]['id'] == 'null':
-        printusertext('ERROR 08: Error retrieving organization list')
+    # get list org all orgs belonging to this admin
+    raw_org_list = get_org_list(arg_apikey)
+    if raw_org_list[0]['id'] == 'null':
+        print_user_text('ERROR: Error retrieving organization list')
         sys.exit(2)
 
-    #match list of orgs to org filter
-    matchedorgs = filterOrgList(arg_apikey, arg_orgname, raworglist)
+    # match list of orgs to org filter
+    matched_orgs = filterOrgList(arg_apikey, arg_orgname, raw_org_list)
 
-    #if no orgs matching - NK 2018-08-23
-    if not matchedorgs:
-        printusertext(f'Error 10: No organizations matching {arg_orgname}')
+    # if no orgs matching - NK 2018-08-23
+    if not matched_orgs:
+        print_user_text(f'Error: No organizations matching {arg_orgname}')
         sys.exit(2)
 
     # Print menu of possible matches
-    printOrgMenu(matchedorgs)
+    print_org_menu(matched_orgs)
 
     # Org ID for the standard organization
-    standardMSPOrg = "REPLACE WITH YOUR ORG ID"
+    standard_msp_org = "PUT DEFAULT ORG ID HERE"
+
     # Get admin list from standard org
-    standardAdmins = getAdminList(arg_apikey, standardMSPOrg, getshardurl(arg_apikey, standardMSPOrg))
+    standard_admins = get_admin_list(arg_apikey, standard_msp_org)
 
     # For each org that matched
-    for org in matchedorgs:
+    for org in matched_orgs:
         # Add each admin from the standard organization
-        for admin in standardAdmins:
-            addorgadmin(arg_apikey, org.id, org.shard, admin['email'], admin['name'], admin['orgAccess'])
+        for admin in standard_admins:
+            add_org_admin(arg_apikey, org.id, admin['email'], admin['name'], admin['orgAccess'])
+
+        chosen_org_admins = get_admin_list(arg_apikey, org.id)
+        for new_admin in chosen_org_admins:
+            if new_admin in standard_admins:
+                print(f'{new_admin["name"]} added successfully.')
+            else:
+                print(f'{new_admin["name"]} not added successfully.')
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])

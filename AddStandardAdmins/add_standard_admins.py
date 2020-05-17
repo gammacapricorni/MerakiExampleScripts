@@ -36,7 +36,8 @@ REQUESTS_READ_TIMEOUT = 30
 # Used by merakirequestthrottler(). DO NOT MODIFY
 LAST_MERAKI_REQUEST = datetime.now()
 
-LINE_SEPARATOR = '-' * 20
+# Org ID for the standard organization
+STANDARD_MSP_ORG = "PUT DEFAULT ORG ID HERE"
 
 
 @dataclass
@@ -211,12 +212,6 @@ def add_org_admin(p_apikey, p_orgid, p_email, p_name, p_privilege):
         print_user_text(f'Unable to add administrator {p_email} to org.')
         sys.exit(2)
 
-    if r.status_code != requests.codes.ok:
-        if r.status_code == 400:
-            print_user_text(
-                f'WARNING: {p_email} may already be added to org. If not, have user login to dashboard.meraki.com'
-                'and verify their email address.')
-
     return (r.status_code)
 
 
@@ -335,11 +330,8 @@ def main(argv):
     # Print menu of possible matches
     print_org_menu(matched_orgs)
 
-    # Org ID for the standard organization
-    standard_msp_org = "PUT DEFAULT ORG ID HERE"
-
     # Get admin list from standard org
-    standard_admins = get_admin_list(arg_apikey, standard_msp_org)
+    standard_admins = get_admin_list(arg_apikey, STANDARD_MSP_ORG)
 
     # For each org that matched
     for org in matched_orgs:
@@ -350,9 +342,9 @@ def main(argv):
         chosen_org_admins = get_admin_list(arg_apikey, org.id)
         for new_admin in chosen_org_admins:
             if new_admin in standard_admins:
-                print(f'{new_admin["name"]} added successfully.')
+                print(f'{new_admin["name"]} is an admin on {org.name}.')
             else:
-                print(f'{new_admin["name"]} not added successfully.')
+                print(f'{new_admin["name"]} not added successfully. Is account verified with Meraki Dashboard?')
 
 
 if __name__ == '__main__':

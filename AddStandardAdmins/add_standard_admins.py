@@ -1,3 +1,22 @@
+"""
+Use to update pre-existing Meraki Org with the standard set of admins.
+
+Set standard_msp_org variable to the org ID for your example org.
+
+merakirequestthrottler(), get_org_list(), filterorglist(), method of getting
+opts, general approach to Meraki API/requests model use are based off
+manageadmins.py at
+https://github.com/meraki/automation-scripts/blob/master/manageadmins.py
+by users mpapazog and shiyuechengineer, retrieved 10/19/2018 by Nash King
+
+To run the script, enter:
+python add_standard_admins.py -o <org>
+
+-o can be a partial name in quotes with a single wildcard, such as "Calla*"
+
+Use double quotes (\"\") in Windows to pass arguments containing spaces. Names are case-sensitive.
+"""
+
 import sys
 import getopt
 import requests
@@ -46,6 +65,8 @@ def print_help():
     print_user_text('')
     print_user_text('Use to update pre-existing Meraki Org with the standard set of admins')
     print_user_text('')
+    print_user_text('Set standard_msp_org variable to the org ID for your example org.')
+    print_user_text('')
     print_user_text('merakirequestthrottler(), get_org_list(), filterorglist(), method of getting')
     print_user_text('opts, general approach to Meraki API/requests model use are based off')
     print_user_text('manageadmins.py at')
@@ -53,7 +74,7 @@ def print_help():
     print_user_text('by users mpapazog and shiyuechengineer, retrieved 10/19/2018 by Nash King')
     print_user_text('')
     print_user_text('To run the script, enter:')
-    print_user_text('python standardAdmins.py -o <org>')
+    print_user_text('python add_standard_admins.py -o <org>')
     print_user_text('')
     print_user_text('-o can be a partial name in quotes with a single wildcard, such as "Calla*"')
     print_user_text('')

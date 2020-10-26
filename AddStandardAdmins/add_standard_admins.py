@@ -1,350 +1,340 @@
-"""
-Use to update pre-existing Meraki Org with the standard set of admins.
+'''
+Push default RF profiles by network for one or more orgs:
 
-Set standard_msp_org variable to the org ID for your example org.
-
-merakirequestthrottler(), get_org_list(), filterorglist(), method of getting
-opts, general approach to Meraki API/requests model use are based off
-manageadmins.py at
-https://github.com/meraki/automation-scripts/blob/master/manageadmins.py
-by users mpapazog and shiyuechengineer, retrieved 10/19/2018 by Nash King
+2.4Ghz and 5Ghz 40Mhz Indoor Profile
+5Ghz 40Mhz Indoor Profile
+2.4GHz and 5Ghz 20Mhz Indoor Profile
+5GHz 20Mhz Indoor Profile
 
 To run the script, enter:
-python add_standard_admins.py -o <org>
+python pushRfProfiles.py -o <org name>
 
--o can be a partial name in quotes with a single wildcard, such as "Calla*"
+-o can be a partial name in quotes such as 'Calla' or 'ssouri'.
+Use /all for all organizations you have access to.
+'''
 
-Use double quotes (\"\") in Windows to pass arguments containing spaces. Names are case-sensitive.
-"""
-
-import sys
 import getopt
-import requests
 import json
-import time
+import requests
+import sys
+from copy import copy
 from dataclasses import dataclass
-from datetime import datetime
 from getpass import getpass
-
-# Used for time.sleep(API_EXEC_DELAY). Delay added to avoid hitting dashboard API max request rate
-API_EXEC_DELAY = 0.21
-
-# Connect and read timeouts for the Requests module
-REQUESTS_CONNECT_TIMEOUT = 30
-REQUESTS_READ_TIMEOUT = 30
-
-# Used by merakirequestthrottler(). DO NOT MODIFY
-LAST_MERAKI_REQUEST = datetime.now()
-
-# Org ID for the standard organization
-STANDARD_MSP_ORG = "PUT DEFAULT ORG ID HERE"
 
 
 @dataclass
-class c_orgData:
+class orgData:
+    '''Class for organization level data. Mostly to add menu number.'''
+
     id: str
     name: str
     menu: int
 
 
-def print_user_text(p_message):
-    """
+def print_user_text(message):
+    '''
     Prints a line of text meant for the user to read.
-    :param p_message: Line of text
+    :param message: Line of text
     :return: None
-    """
-
-    print('@ %s' % p_message)
-    return None
+    '''
+    print(f'@ {message}')
 
 
 def print_help():
-    """
-    Prints help text for user.
+    '''
+    Print help text.
     :return: None
-    """
-    print_user_text('')
-    print_user_text('Use to update pre-existing Meraki Org with the standard set of admins')
-    print_user_text('')
-    print_user_text('Set standard_msp_org variable to the org ID for your example org.')
-    print_user_text('')
-    print_user_text('merakirequestthrottler(), get_org_list(), filterorglist(), method of getting')
-    print_user_text('opts, general approach to Meraki API/requests model use are based off')
-    print_user_text('manageadmins.py at')
-    print_user_text('https://github.com/meraki/automation-scripts/blob/master/manageadmins.py')
-    print_user_text('by users mpapazog and shiyuechengineer, retrieved 10/19/2018 by Nash King')
+    '''
     print_user_text('')
     print_user_text('To run the script, enter:')
-    print_user_text('python add_standard_admins.py -o <org>')
+    print_user_text('python pushRfProfiles.py -o <org name>')
     print_user_text('')
-    print_user_text('-o can be a partial name in quotes with a single wildcard, such as "Calla*"')
+    print_user_text('-o can be a partial name in quotes')
+    print_user_text('such as \'Calla\' or \'ssouri\'.')
+    print_user_text('Use /all for all organizations you have access to.')
     print_user_text('')
-    print_user_text('Use double quotes (\"\") in Windows to pass arguments containing spaces. Names are case-sensitive.')
+    print_user_text('Use double quotes (/"") in Windows to pass arguments')
+    print_user_text('containing spaces.')
     print_user_text('')
 
+def get_network_list(api_key, org_id):
+    '''
+    Return list of networks for specified organization.
+    
+    :param api_key: Meraki Dashboard API key
+    :param org_id: Organization ID number
 
-def merakirequestthrottler(p_requestcount=1):
-    """
-    Ensures there is enough time between API requests to Dashboard, to avoid hitting shaper.
-    :param p_requestcount:
-    :return: None
-    """
-    global LAST_MERAKI_REQUEST
+    :return: List of dictionaries containing all networks for an organization.
+    '''
 
-    if (datetime.now() - LAST_MERAKI_REQUEST).total_seconds() < (API_EXEC_DELAY * p_requestcount):
-        time.sleep(API_EXEC_DELAY * p_requestcount)
+    url = f'https://api-mp.meraki.com/api/v0/organizations/{org_id}/networks'
+    headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
 
-    LAST_MERAKI_REQUEST = datetime.now()
-    return None
-
-
-def get_org_list(p_apikey):
-    """
-    Pulls list of all orgs the API key has access to.
-    :param p_apikey: Your API key
-    :return: list of dicts containing org info
-    """
-
-    merakirequestthrottler()
-
-    try:
-        r = requests.get('https://api.meraki.com/api/v0/organizations',
-                         headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},
-                         timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
-    except:
-        print_user_text('ERROR 01: Unable to contact Meraki cloud')
-        sys.exit(2)
-
-    if r.status_code != requests.codes.ok:
-        return [{'id': 'null'}]
+    r = requests.request('GET', url, headers=headers)
 
     rjson = r.json()
 
-    return (rjson)
+    return(rjson)
 
 
-def get_admin_list(p_apikey, p_orgid):
-    """
-    Returns the list of organizations an the API key can access.
+def get_org_list(api_key):
+    '''
+    Return the organizations' list for a specified admin.
+    
+    :param api_key: Meraki Dashboard API key
 
-    :param p_apikey:
-    :param p_orgid:
-    :return: list of dicts
-    """
+    :return: List of dictionaries containing all organizations your API key can access.
+    '''
+    
+    url = f'https://api-mp.meraki.com/api/v0/organizations/'
+    headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
 
-    merakirequestthrottler()
-    try:
-        r = requests.get(f'https://api-mp.meraki.com/api/v0/organizations/{p_orgid}/admins',
-                         headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},
-                         timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
-    except requests.exceptions.RequestException as e:
-        print_user_text(f'Error: {e}')
-        print_user_text('Unable to get list of administrators from organization.')
+    r = requests.request('GET', url, headers=headers)
+
+    if r.status_code == '401':
+        print_user_text("Invalid API key.")
         sys.exit(1)
 
-    returnvalue = []
-    if r.status_code != requests.codes.ok:
-        returnvalue.append({'id': 'null'})
-        return returnvalue
+    rjson = r.json()
+
+    return(rjson)
+
+
+def post_rf_profile(api_key, network_id, rf_profile_payload):
+    '''
+    Create new RF profile.
+    
+    :param api_key: Meraki Dashboard API key
+    :param network_id: Network ID number
+    :param rf_profile_payload: Dictionary containing RF profile settings
+
+    :return: requests.Response object
+    '''
+
+    url = f"https://api-mp.meraki.com/api/v0/networks/{network_id}/wireless/rfProfiles"
+    headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
+
+    json_payload = json.dumps(rf_profile_payload)
+    r = requests.request('POST', url, headers=headers, data=json_payload)
+
+    if r.status_code == 400:
+        print(f"{rf_profile_payload['name']} returned status code: {r.status_code}. Possible bad JSON or profile already exists.\n")
+    elif r.status_code != 201:
+        print(f"{rf_profile_payload['name']} returned status code: {r.status_code}\n")
+    else:
+        print(f"{rf_profile_payload['name']} added successfully.")
+
+    return(r)
+
+
+def get_rf_profiles(api_key, network_id):
+    '''
+    Pull all RF profiles for a network.
+    
+    :param api_key: Meraki Dashboard API key
+    :param network_id: Network ID number
+
+    :return: List of dictionaries containing a network's configured RF Profiles
+    '''
+
+    url = f"https://api-mp.meraki.com/api/v0/networks/{network_id}/wireless/rfProfiles"
+    headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
+
+    r = requests.request('GET', url, headers=headers)
 
     rjson = r.json()
 
-    return (rjson)
+    return(rjson)
 
 
-# Print menu of possible matching organizations
-def print_org_menu(p_orglist):
-    """
-    Print menu of organizations.
+def profile_exist_check(exists_list, new_profile_name):
+    '''
+    Check if a profile with the same name exists.
+    
+    :param exists_list: List of dictionaries containing a network's configured RF Profiles
+    :param new_profile_name: Name of proposed new RF Profile
 
-    :param p_orglist: list of c_orgdata objects
-    :return: single matching c_orgdata object
-    """
+    :return: Empty dictionary if no matching name, or containing settings if match exists
+    '''
 
-    menu_choice = ''
-
-    print('\nChoose organization from list, or Q to Quit')
-
-    # Loop til menu_choice is a valid response or a valid org is chosen
-    while menu_choice == '':
-        for org in p_orglist:
-            # Print each org
-            print(f'{org.menu}: {org.name}')
-        print('Q: Quit program')
-        menu_choice = input('Enter choice: ')
-        print('')
-        if menu_choice.lower().strip() == 'q':
-            sys.exit()
-
-        # Check if menu_choice is not empty
-        elif menu_choice != '' and menu_choice.isdigit():
-            for org in p_orglist:
-                # If org.menu matches, then return org
-                if org.menu == int(menu_choice):
-                    return org
-            # If nothing matches, set menu_choice to empty to keep looping
-            print('Invalid choice. Please try again.')
-            menu_choice = ''
-        else:
-            print('Invalid choice. Please try again.')
-            menu_choice = ''
+    for extant in exists_list:
+        if extant['name'] == new_profile_name:
+            return extant
+    return {}
 
 
-def add_org_admin(p_apikey, p_orgid, p_email, p_name, p_privilege):
-    """
-    Creates admin for a single organization
-    :param p_apikey: Your API key
-    :param p_orgid: org ID
-    :param p_email: administrator's email address - serves as user name
-    :param p_name: administrator's display name
-    :param p_privilege: privilege level. Full (read/write) or read-only
-    :return:
-    """
-    merakirequestthrottler()
+def check_profile_settings_match(existing_profile, new_profile):
+    '''
+    Remove networkId and RF Profile ID then return true if existing matches new.
+    
+    :param existing_profile: Dictionary containing existing RF profile
+    :param new_profile: Dictionary containing standard RF profile
 
-    try:
-        r = requests.post(f'https://api-mp.meraki.com/api/v0/organizations/{p_orgid}/admins',
-                          data=json.dumps({'name': p_name, 'email': p_email, 'orgAccess': p_privilege}),
-                          headers={'X-Cisco-Meraki-API-Key': p_apikey, 'Content-Type': 'application/json'},
-                          timeout=(REQUESTS_CONNECT_TIMEOUT, REQUESTS_READ_TIMEOUT))
-    except requests.exceptions.RequestException as e:
-        print_user_text(f'Error msg: {e}')
-        print_user_text(f'Unable to add administrator {p_email} to org.')
-        sys.exit(2)
+    :return: bool
 
-    return (r.status_code)
+    '''
+    # Copy to new var so you don't modify underlying dict
+    modifiable_profile = copy(existing_profile)
+
+    # New profiles don't include 'id' or 'networkId', so pop to remove.
+    remove = ['id', 'networkId']
+    for item in remove:
+        modifiable_profile.pop(item)
+
+    # Check if all the values match. They should be in the same order.
+    return modifiable_profile == new_profile
 
 
-def filterOrgList(p_apikey, p_filter, p_orglist):
-    """
-    :param p_apikey: Your API key.
-    :param p_filter: Specified filter string. /all matches all orgs.
-    :param p_orglist: Raw list of organizations from Get Organizations.
-    :return: return_list: sorted filtered list of c_orgdata objects
+def filter_org_list(api_key, filter, org_list):
+    '''
+    Try to match a list of org IDs to a filter expression.
 
-    Tries to match a list of org IDs to a filter expression, then convert JSON into c_orgdata objects.
-    """
+    :param api_key: Meraki Dashboard API key
+    :param filter: '/all' for all orgs or a string for finding partial matches
+    :param org_list: List of dicts containing Meraki organizations
 
-    global start_section
+    :return: List of dicts containing organizations that match filter, sorted alphabetically.
+    '''
     return_list = []
+    process_all = False
 
-    flag_process_all = False
-    flag_got_wildcard = False
-    if p_filter == '/all':
-        flag_process_all = False
-        print("No /all allowed on admin adds.")
-    else:
-        wildcard_pos = p_filter.find('*')
+    if filter == '/all':
+        process_all = True
 
-        if wildcard_pos > -1:
-            flag_got_wildcard = True
-            start_section = ''
-            end_section = ''
-
-            if wildcard_pos == 0:
-                # wildcard at start of string, only got end_section
-                end_section = p_filter[1:]
-
-            elif wildcard_pos == len(p_filter) - 1:
-                # wildcard at start of string, only got start_section
-                start_section = p_filter[:-1]
-            else:
-                # wildcard at middle of string, got both start_section and end_section
-                wild_card_split = p_filter.split('*')
-                start_section = wild_card_split[0]
-                end_section = wild_card_split[1]
-
-    for org in p_orglist:
-        if flag_process_all:
-            return_list.append(c_orgData(org['id'], org['name'], 0))
-        elif flag_got_wildcard:
-            flag_got_match = True
-            # match start_section and end_section
-            start_len = len(start_section)
-            end_len = len(end_section)
-
-            if start_len > 0:
-                if org['name'][:start_len] != start_section:
-                    flag_got_match = False
-            elif end_len > 0:
-                if org['name'][-end_len:] != end_section:
-                    flag_got_match = False
-
-            if flag_got_match:
-                return_list.append(c_orgData(org['id'], org['name'], 0))
-
-        else:
-            # match full name
-            if org['name'] == p_filter:
-                return_list.append(c_orgData(org['id'], org['name'], 0))
-
-    # Sort list here, so the right menu num gets added
-    sorted_orgs = []
-    sorted_orgs = sorted(return_list, key=lambda c_orgdata: c_orgdata.name)
+    # Add a number to make menu-making simpler
     menu_num = 1
+
+    # Sort by org name
+    sorted_orgs = sorted(org_list, key=lambda org_list: org_list['name'])
+    
+    # 
     for org in sorted_orgs:
-        org.menu = menu_num
-        menu_num += 1
-    return (sorted_orgs)
+        if process_all:
+            return_list.append(orgData(org['id'], org['name'], menu_num))
+            menu_num += 1
+        else:
+            if (org['name'].lower()).find(filter) != -1:
+                return_list.append(orgData(org['id'], org['name'], menu_num))
+                menu_num += 1
+
+    if len(return_list):
+        return(return_list)
+    else:
+        print_user_text(f'ERROR: No organizations matching: {filter}')
+        sys.exit(1)
+
+
+def choose_org(org_list):
+    '''
+    Print a menu, then return user's chosen organization.
+    
+    :param org_list: List of dicts of Meraki organizations
+    
+    :return: List of dicts containing matching org.
+    '''
+
+    attempts = 0
+
+    while (attempts < 3):
+        attempts += 1
+        for org in org_list:
+            print(f'{org.menu}: {org.name}')
+        chosen_org = input("Enter Q to quit or select menu number: ")
+
+        if chosen_org.lower() == 'q':
+            print("Quiting program...")
+            sys.exit()
+        else:
+            for org in org_list:
+                if org.menu == int(chosen_org):
+                    return([org])
+            # If no org matches, print notice then quit.
+            print(f'No matching menu item {chosen_org}\n')
+
+    print("No valid choice made. Exiting...")
+    sys.exit()
 
 
 def main(argv):
-    # initialize variables for command line arguments
-    arg_apikey = getpass('API key: ')
-    arg_orgname = ''
+    # Initialize variables for command line arguments
+    arg_org_name = ''
 
-    if arg_apikey == '':
-        arg_apikey = getpass('Enter API key: ')
-
-    # get command line arguments
+    # Get command line arguments
     try:
         opts, args = getopt.getopt(argv, 'ho:')
     except getopt.GetoptError:
         print_user_text('Error getting opts.')
         sys.exit(2)
 
-    for opt, arg in opts:
-        if opt == '-h':
-            print_help()
-            sys.exit()
-        elif opt == '-o':
-            arg_orgname = arg
-            if arg_orgname == '':
-                print_user_text('No org name')
-                sys.exit(2)
+    if opts:
+        for opt, arg in opts:
+            if opt == '-h':
+                print_help()
+                sys.exit()
+            elif opt == '-o':
+                if arg == '':
+                    print_user_text('No org name')
+                    sys.exit()
+                else:
+                    arg_org_name = arg.lower()
 
-    # get list org all orgs belonging to this admin
-    raw_org_list = get_org_list(arg_apikey)
-    if raw_org_list[0]['id'] == 'null':
-        print_user_text('ERROR: Error retrieving organization list')
-        sys.exit(2)
+    else:
+        print_user_text("No opts given.")
+        print_help()
+        sys.exit()
 
-    # match list of orgs to org filter
-    matched_orgs = filterOrgList(arg_apikey, arg_orgname, raw_org_list)
+    # Use getpass() to hide API key cuz you have manners
+    arg_api_key = getpass("API key: ")
 
-    # if no orgs matching - NK 2018-08-23
-    if not matched_orgs:
-        print_user_text(f'Error: No organizations matching {arg_orgname}')
-        sys.exit(2)
+    # Embedded profiles in script because original audience was not comfortable
+    # modifying a CSV to update these, or remembering to download the CSV from source.
 
-    # Print menu of possible matches
-    print_org_menu(matched_orgs)
+    # Dict of profiles:
+    # 2.4GHz + 5Ghz 40 MHz channel width
+    # 2.4Ghz + 5Ghz 20 MHz channel width
+    # 5Ghz 40 MHz channel width
+    # 5Ghz 20 MHz channel width
+    newProfiles = [{'name': '2.4Ghz and 5Ghz 40Mhz Indoor Profile', 'clientBalancingEnabled': True, 'minBitrateType': 'band', 'bandSelectionType': 'ap', 'apBandSettings': {'bandOperationMode': 'dual', 'bandSteeringEnabled': False}, 'twoFourGhzSettings': {'maxPower': 30, 'minPower': 5, 'minBitrate': 11, 'rxsop': None, 'validAutoChannels': [1, 6, 11], 'axEnabled': True}, 'fiveGhzSettings': {'maxPower': 30, 'minPower': 8, 'minBitrate': 12, 'rxsop': None, 'validAutoChannels': [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 136, 140, 144, 149, 153, 157, 161], 'channelWidth': '40'}}, {"name": "5Ghz 40Mhz Indoor Profile", "clientBalancingEnabled": True, "minBitrateType": "band", "bandSelectionType": "ap", "apBandSettings": {"bandOperationMode": "5Ghz", "bandSteeringEnabled": False}, "twoFourGhzSettings": {"maxPower": 30, "minPower": 5, "minBitrate": 11, "rxsop": None, "validAutoChannels": [], "axEnabled": True}, "fiveGhzSettings": {"maxPower": 30, "minPower": 8, "minBitrate": 12, "rxsop": None, "validAutoChannels": [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 136, 140, 144, 149, 153, 157, 161], "channelWidth": "40"}}, {"name": "5Ghz 20Mhz Indoor Profile", "clientBalancingEnabled": True, "minBitrateType": "band", "bandSelectionType": "ap", "apBandSettings": {"bandOperationMode": "5Ghz", "bandSteeringEnabled": False}, "twoFourGhzSettings": {"maxPower": 30, "minPower": 5, "minBitrate": 11, "rxsop": None, "validAutoChannels": [], "axEnabled": True}, "fiveGhzSettings": {"maxPower": 30, "minPower": 8, "minBitrate": 12, "rxsop": None, "validAutoChannels": [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 136, 140, 144, 149, 153, 157, 161], "channelWidth": "20"}}, {'name': '2.4Ghz and 5Ghz 20Mhz Indoor Profile', 'clientBalancingEnabled': True, 'minBitrateType': 'band', 'bandSelectionType': 'ap', 'apBandSettings': {'bandOperationMode': 'dual', 'bandSteeringEnabled': False}, 'twoFourGhzSettings': {'maxPower': 30, 'minPower': 5, 'minBitrate': 11, 'rxsop': None, 'validAutoChannels': [1, 6, 11], 'axEnabled': True}, 'fiveGhzSettings': {'maxPower': 30, 'minPower': 8, 'minBitrate': 12, 'rxsop': None, 'validAutoChannels': [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 136, 140, 144, 149, 153, 157, 161], 'channelWidth': '20'}}]
 
-    # Get admin list from standard org
-    standard_admins = get_admin_list(arg_apikey, STANDARD_MSP_ORG)
+    # Get your organization list and check if your API key works.
+    raw_org_list = get_org_list(arg_api_key)
 
-    # For each org that matched
+    # Match list of orgs to org filter
+    filtered_orgs = filter_org_list(arg_api_key, arg_org_name, raw_org_list)
+
+    if len(filtered_orgs) >= 0:
+        matched_orgs = choose_org(filtered_orgs)
+    else:
+        print("\nRunning against all orgs...")
+        matched_orgs = filtered_orgs
+        print(matched_orgs)
+    
+    # Push to network in org
     for org in matched_orgs:
-        # Add each admin from the standard organization
-        for admin in standard_admins:
-            add_org_admin(arg_apikey, org.id, admin['email'], admin['name'], admin['orgAccess'])
+        network_list = get_network_list(arg_api_key, org.id)
+        # Put print lines like every other line and figure out why logic isn't triggering
+        for network in network_list:
 
-        chosen_org_admins = get_admin_list(arg_apikey, org.id)
-        for new_admin in chosen_org_admins:
-            if new_admin in standard_admins:
-                print(f'{new_admin["name"]} is an admin on {org.name}.')
+            # Can only add RF profiles to networks with actual APs.
+            if 'wireless' in network['productTypes']:
+                print(f"\n{org.name}: {network['name']}")
+                extantProfiles = get_rf_profiles(arg_api_key, network['id'])
+
+                for profile in newProfiles:
+                    # Check if profile by that name already exists.
+                    profile_exists = profile_exist_check(extantProfiles, profile['name'])
+                    if profile_exists:
+                        if check_profile_settings_match(profile_exists, profile):
+                            print(f"{profile['name']} already exists with CORRECT settings")
+                        else:
+                            print(f"{profile['name']} exists with WRONG settings.")
+                    else:
+                        post_rf_profile(arg_api_key, network['id'], profile)
+                print("")
+
             else:
-                print(f'{new_admin["name"]} not added successfully. Is account verified with Meraki Dashboard?')
+                # If no wireless APs in network, print notice and move on.
+                print(f"{network['name']}: No wireless equipment.\n")
 
 
 if __name__ == '__main__':

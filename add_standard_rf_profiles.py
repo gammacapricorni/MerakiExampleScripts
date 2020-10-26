@@ -32,12 +32,19 @@ class orgData:
 
 
 def print_user_text(message):
-    '''Print a line of alert or error text.'''
+    '''
+    Prints a line of text meant for the user to read.
+    :param message: Line of text
+    :return: None
+    '''
     print(f'@ {message}')
 
 
 def print_help():
-    '''Print help text.'''
+    '''
+    Print help text.
+    :return: None
+    '''
     print_user_text('')
     print_user_text('To run the script, enter:')
     print_user_text('python pushRfProfiles.py -o <org name>')
@@ -50,10 +57,17 @@ def print_help():
     print_user_text('containing spaces.')
     print_user_text('')
 
-def get_network_list(api_key, p_orgid):
-    '''Return list of networks for specified organization.'''
+def get_network_list(api_key, org_id):
+    '''
+    Return list of networks for specified organization.
+    
+    :param api_key: Meraki Dashboard API key
+    :param org_id: Organization ID number
 
-    url = f'https://api-mp.meraki.com/api/v0/organizations/{p_orgid}/networks'
+    :return: List of dictionaries containing all networks for an organization.
+    '''
+
+    url = f'https://api-mp.meraki.com/api/v0/organizations/{org_id}/networks'
     headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
 
     r = requests.request('GET', url, headers=headers)
@@ -64,7 +78,13 @@ def get_network_list(api_key, p_orgid):
 
 
 def get_org_list(api_key):
-    '''Return the organizations' list for a specified admin.'''
+    '''
+    Return the organizations' list for a specified admin.
+    
+    :param api_key: Meraki Dashboard API key
+
+    :return: List of dictionaries containing all organizations your API key can access.
+    '''
     
     url = f'https://api-mp.meraki.com/api/v0/organizations/'
     headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
@@ -81,7 +101,16 @@ def get_org_list(api_key):
 
 
 def post_rf_profile(api_key, network_id, rf_profile_payload):
-    '''Create new RF profile.'''
+    '''
+    Create new RF profile.
+    
+    :param api_key: Meraki Dashboard API key
+    :param network_id: Network ID number
+    :param rf_profile_payload: Dictionary containing RF profile settings
+
+    :return: requests.Response object
+    '''
+
     url = f"https://api-mp.meraki.com/api/v0/networks/{network_id}/wireless/rfProfiles"
     headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
 
@@ -99,7 +128,14 @@ def post_rf_profile(api_key, network_id, rf_profile_payload):
 
 
 def get_rf_profiles(api_key, network_id):
-    '''Pull all RF profiles for a network.'''
+    '''
+    Pull all RF profiles for a network.
+    
+    :param api_key: Meraki Dashboard API key
+    :param network_id: Network ID number
+
+    :return: List of dictionaries containing a network's configured RF Profiles
+    '''
 
     url = f"https://api-mp.meraki.com/api/v0/networks/{network_id}/wireless/rfProfiles"
     headers = {'X-Cisco-Meraki-API-Key': api_key, 'Content-Type': 'application/json'}
@@ -112,7 +148,15 @@ def get_rf_profiles(api_key, network_id):
 
 
 def profile_exist_check(exists_list, new_profile_name):
-    '''Check if a profile with the same name exists.'''
+    '''
+    Check if a profile with the same name exists.
+    
+    :param exists_list: List of dictionaries containing a network's configured RF Profiles
+    :param new_profile_name: Name of proposed new RF Profile
+
+    :return: Empty dictionary if no matching name, or containing settings if match exists
+    '''
+
     for extant in exists_list:
         if extant['name'] == new_profile_name:
             return extant
@@ -120,8 +164,16 @@ def profile_exist_check(exists_list, new_profile_name):
 
 
 def check_profile_settings_match(existing_profile, new_profile):
-    '''Remove networkId and RF Profile ID then return true if existing matches new.'''
-    # Assign to new var so you don't modify underlying dict
+    '''
+    Remove networkId and RF Profile ID then return true if existing matches new.
+    
+    :param existing_profile: Dictionary containing existing RF profile
+    :param new_profile: Dictionary containing standard RF profile
+
+    :return: bool
+
+    '''
+    # Copy to new var so you don't modify underlying dict
     modifiable_profile = copy(existing_profile)
 
     # New profiles don't include 'id' or 'networkId', so pop to remove.
@@ -137,10 +189,11 @@ def filter_org_list(api_key, filter, org_list):
     '''
     Try to match a list of org IDs to a filter expression.
 
-    Filter:
-       /all    all organizations
-       <name>  match if name matches. Name can contain one wildcard at start,
-                 middle or end.
+    :param api_key: Meraki Dashboard API key
+    :param filter: '/all' for all orgs or a string for finding partial matches
+    :param org_list: List of dicts containing Meraki organizations
+
+    :return: List of dicts containing organizations that match filter, sorted alphabetically.
     '''
     return_list = []
     process_all = False
@@ -172,7 +225,13 @@ def filter_org_list(api_key, filter, org_list):
 
 
 def choose_org(org_list):
-    """Print a menu, then return user's chosen organization."""
+    '''
+    Print a menu, then return user's chosen organization.
+    
+    :param org_list: List of dicts of Meraki organizations
+    
+    :return: List of dicts containing matching org.
+    '''
 
     attempts = 0
 
@@ -272,7 +331,7 @@ def main(argv):
                     else:
                         post_rf_profile(arg_api_key, network['id'], profile)
                 print("")
-                
+
             else:
                 # If no wireless APs in network, print notice and move on.
                 print(f"{network['name']}: No wireless equipment.\n")
